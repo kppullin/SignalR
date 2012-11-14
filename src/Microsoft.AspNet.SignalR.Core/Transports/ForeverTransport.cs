@@ -250,14 +250,14 @@ namespace Microsoft.AspNet.SignalR.Transports
             return tcs.Task;
         }
 
+        [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity", Justification = "This will be cleaned up later.")]
         [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "Exceptions are flowed to the caller.")]
         private void ProcessMessages(ITransportConnection connection, Func<Task> postReceive, Action<Exception> endRequest)
         {
             IDisposable subscription = null;
             var wh = new ManualResetEventSlim(initialState: false);
-            var registration = default(CancellationTokenRegistration);
-            var callbackState = 0;
-
+            IDisposable registration = null;
+            
             try
             {
                 subscription = connection.Receive(LastMessageId, response =>
@@ -273,11 +273,7 @@ namespace Microsoft.AspNet.SignalR.Transports
                         // Send the response before removing any connection data
                         return Send(response).Then(() =>
                         {
-                            if (Interlocked.CompareExchange(ref callbackState, 1, 0) == 0)
-                            {
-                                // Remove registrations so the callback doesn't fire again
-                                registration.Dispose();
-                            }
+                            registration.Dispose();
 
                             // Remove connection without triggering disconnect
                             Heartbeat.RemoveConnection(this);
@@ -291,11 +287,7 @@ namespace Microsoft.AspNet.SignalR.Transports
                              response.Aborted ||
                              ConnectionEndToken.IsCancellationRequested)
                     {
-                        if (Interlocked.CompareExchange(ref callbackState, 1, 0) == 0)
-                        {
-                            // Remove registrations so the callback doesn't fire again
-                            registration.Dispose();
-                        }
+                        registration.Dispose();
 
                         if (response.Aborted)
                         {
@@ -314,8 +306,7 @@ namespace Microsoft.AspNet.SignalR.Transports
                                              .Catch(ex =>
                                              {
                                                  Trace.TraceInformation("Send failed with: " + ex.GetBaseException());
-                                             })
-                                             .Catch(ex => End());
+                                             });
                     }
                 },
                 MaxMessages);
@@ -344,26 +335,14 @@ namespace Microsoft.AspNet.SignalR.Transports
                 wh.Set();
             }
 
-            try
+            // End the request if the connection end token is triggered
+            registration = ConnectionEndToken.SafeRegister(state =>
             {
-                // End the request if the connection end token is triggered
-                registration = ConnectionEndToken.Register(state =>
-                {
-                    Trace.TraceInformation("Cancel(" + ConnectionId + ")");
+                Trace.TraceInformation("Cancel(" + ConnectionId + ")");
 
-                    if (Interlocked.Exchange(ref callbackState, 1) == 0)
-                    {
-                        ((IDisposable)state).Dispose();
-                    }
-                },
-                subscription);
-            }
-            catch (ObjectDisposedException)
-            {
-                // If we've ended the connection before we got a chance to register the connection
-                // then dispose the subscription immediately
-                subscription.Dispose();
-            }
+                state.Dispose();
+            },
+            subscription);
         }
     }
 }

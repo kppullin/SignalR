@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.md in the project root for license information.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNet.SignalR.Hosting.Common.Routing;
 
 namespace Microsoft.AspNet.SignalR.Hosting.Common
@@ -20,7 +21,7 @@ namespace Microsoft.AspNet.SignalR.Hosting.Common
         }
 
         /// <summary>
-        /// Map the <see cref="HubDisptcher"/> to the default hub url (~/signalr)
+        /// Map the <see cref="T:Microsoft.AspNet.SignalR.Hubs.HubDisptcher"/> to the default hub url (~/signalr)
         /// </summary>
         public RoutingHost MapHubs()
         {
@@ -28,9 +29,9 @@ namespace Microsoft.AspNet.SignalR.Hosting.Common
         }
 
         /// <summary>
-        /// Maps the <see cref="HubDisptcher"/> to the specified path.
+        /// Maps the <see cref="T:Microsoft.AspNet.SignalR.Hubs.HubDisptcher"/> to the specified path.
         /// </summary>
-        /// <param name="path">The path of the <see cref="HubDisptcher"/></param>
+        /// <param name="path">The path of the <see cref="T:Microsoft.AspNet.SignalR.Hubs.HubDisptcher"/></param>
         public RoutingHost MapHubs(string path)
         {
             _routeManager.MapHubs(path);
@@ -43,6 +44,7 @@ namespace Microsoft.AspNet.SignalR.Hosting.Common
         /// </summary>
         /// <typeparam name="TConnection">The type of <see cref="PersistentConnection"/></typeparam>
         /// <param name="path">The path of <see cref="PersistentConnection"/></param>
+        [SuppressMessage("Microsoft.Design", "CA1004:GenericMethodsShouldProvideTypeParameter", Justification = "The type parameter is syntactic sugar")]
         public RoutingHost MapConnection<TConnection>(string path) where TConnection : PersistentConnection
         {
             _routeManager.MapConnection<TConnection>(path);

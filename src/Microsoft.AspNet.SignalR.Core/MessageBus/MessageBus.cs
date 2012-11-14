@@ -16,7 +16,6 @@ namespace Microsoft.AspNet.SignalR
     /// </summary>
     public class MessageBus : IMessageBus, IDisposable
     {
-        protected readonly ConcurrentDictionary<string, Topic> _topics = new ConcurrentDictionary<string, Topic>();
         private readonly MessageBroker _broker;
 
         private const int DefaultMessageStoreSize = 5000;
@@ -25,8 +24,6 @@ namespace Microsoft.AspNet.SignalR
 
         private readonly ITraceManager _traceManager;
         private readonly TraceSource _trace;
-
-        protected readonly IPerformanceCounterManager _counters;
 
         private Timer _gcTimer;
         private int _gcRunning;
@@ -49,22 +46,44 @@ namespace Microsoft.AspNet.SignalR
         /// <summary>
         /// 
         /// </summary>
+        /// <param name="stringMinifier"></param>
         /// <param name="traceManager"></param>
         /// <param name="performanceCounterManager"></param>
+        /// <param name="configurationManager"></param>
         [SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "The message broker is disposed when the bus is disposed.")]
         public MessageBus(IStringMinifier stringMinifier,
                           ITraceManager traceManager,
                           IPerformanceCounterManager performanceCounterManager,
                           IConfigurationManager configurationManager)
         {
+            if (stringMinifier == null)
+            {
+                throw new ArgumentNullException("stringMinifier");
+            }
+
+            if (traceManager == null)
+            {
+                throw new ArgumentNullException("traceManager");
+            }
+
+            if (performanceCounterManager == null)
+            {
+                throw new ArgumentNullException("performanceCounterManager");
+            }
+
+            if (configurationManager == null)
+            {
+                throw new ArgumentNullException("configurationManager");
+            }
+
             _stringMinifier = stringMinifier;
             _traceManager = traceManager;
-            _counters = performanceCounterManager;
+            Counters = performanceCounterManager;
             _trace = _traceManager["SignalR.MessageBus"];
 
             _gcTimer = new Timer(_ => CheckTopics(), state: null, dueTime: _gcInterval, period: _gcInterval);
 
-            _broker = new MessageBroker(_counters)
+            _broker = new MessageBroker(Counters)
             {
                 Trace = Trace
             };
@@ -72,6 +91,8 @@ namespace Microsoft.AspNet.SignalR
             // Keep topics alive for as long as we let connections wait until they are disconnected.
             // This should be a good enough estimate for how long until we should consider a topic dead.
             _topicTtl = configurationManager.DisconnectTimeout;
+
+            Topics = new ConcurrentDictionary<string, Topic>();
         }
 
         private TraceSource Trace
@@ -81,6 +102,9 @@ namespace Microsoft.AspNet.SignalR
                 return _trace;
             }
         }
+
+        protected ConcurrentDictionary<string, Topic> Topics { get; private set; }
+        protected IPerformanceCounterManager Counters { get; private set; }
 
         public int AllocatedWorkers
         {
@@ -104,12 +128,17 @@ namespace Microsoft.AspNet.SignalR
         /// <param name="message">The message to publish.</param>
         public virtual Task Publish(Message message)
         {
+            if (message == null)
+            {
+                throw new ArgumentNullException("message");
+            }
+
             Topic topic = GetTopic(message.Key);
 
             topic.Store.Add(message);
 
-            _counters.MessageBusMessagesPublishedTotal.Increment();
-            _counters.MessageBusMessagesPublishedPerSec.Increment();
+            Counters.MessageBusMessagesPublishedTotal.Increment();
+            Counters.MessageBusMessagesPublishedPerSec.Increment();
 
             ScheduleTopic(topic);
 
@@ -118,12 +147,17 @@ namespace Microsoft.AspNet.SignalR
 
         protected ulong Save(Message message)
         {
+            if (message == null)
+            {
+                throw new ArgumentNullException("message");
+            }
+
             Topic topic = GetTopic(message.Key);
 
             ulong id = topic.Store.Add(message);
 
-            _counters.MessageBusMessagesPublishedTotal.Increment();
-            _counters.MessageBusMessagesPublishedPerSec.Increment();
+            Counters.MessageBusMessagesPublishedTotal.Increment();
+            Counters.MessageBusMessagesPublishedPerSec.Increment();
 
             return id;
         }
@@ -134,10 +168,13 @@ namespace Microsoft.AspNet.SignalR
         /// <param name="subscriber"></param>
         /// <param name="cursor"></param>
         /// <param name="callback"></param>
+        /// <param name="maxMessages"></param>
         /// <returns></returns>
-        public virtual IDisposable Subscribe(ISubscriber subscriber, string cursor, Func<MessageResult, Task<bool>> callback, int messageBufferSize)
+        [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "Failure to invoke the callback should be ignored")]
+        [SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "The disposable object is returned to the caller")]
+        public virtual IDisposable Subscribe(ISubscriber subscriber, string cursor, Func<MessageResult, Task<bool>> callback, int maxMessages)
         {
-            Subscription subscription = CreateSubscription(subscriber, cursor, callback, messageBufferSize);
+            Subscription subscription = CreateSubscription(subscriber, cursor, callback, maxMessages);
 
             var topics = new HashSet<Topic>();
 
@@ -180,8 +217,16 @@ namespace Microsoft.AspNet.SignalR
                 // This will stop work from continuting to happen
                 subscription.Dispose();
 
-                // Invoke the terminal callback
-                subscription.Invoke(MessageResult.TerminalMessage).Wait();
+                try
+                {
+                    // Invoke the terminal callback
+                    subscription.Invoke(MessageResult.TerminalMessage).Wait();
+                }
+                catch
+                {
+                    // We failed to talk to the subscriber because they are already gone
+                    // so the terminal message isn't required.
+                }
 
                 subscriber.EventKeyAdded -= eventAdded;
                 subscriber.EventKeyRemoved -= eventRemoved;
@@ -205,15 +250,16 @@ namespace Microsoft.AspNet.SignalR
             return disposable;
         }
 
+        [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "0", Justification = "Called from derived class")]
         protected virtual Subscription CreateSubscription(ISubscriber subscriber, string cursor, Func<MessageResult, Task<bool>> callback, int messageBufferSize)
         {
-            return new DefaultSubscription(subscriber.Identity, subscriber.EventKeys, _topics, cursor, callback, messageBufferSize, _stringMinifier, _counters);
+            return new DefaultSubscription(subscriber.Identity, subscriber.EventKeys, Topics, cursor, callback, messageBufferSize, _stringMinifier, Counters);
         }
 
         protected void ScheduleEvent(string eventKey)
         {
             Topic topic;
-            if (_topics.TryGetValue(eventKey, out topic))
+            if (Topics.TryGetValue(eventKey, out topic))
             {
                 ScheduleTopic(topic);
             }
@@ -237,24 +283,32 @@ namespace Microsoft.AspNet.SignalR
             }
         }
 
-        public virtual void Dispose()
+        protected virtual void Dispose(bool disposing)
         {
-            // Stop the broker from doing any work
-            _broker.Dispose();
-
-            // Spin while we wait for the timer to finish if it's currently running
-            while (Interlocked.Exchange(ref _gcRunning, 1) == 1)
+            if (disposing)
             {
-                Thread.Sleep(250);
-            }
+                // Stop the broker from doing any work
+                _broker.Dispose();
 
-            // Remove all topics
-            _topics.Clear();
+                // Spin while we wait for the timer to finish if it's currently running
+                while (Interlocked.Exchange(ref _gcRunning, 1) == 1)
+                {
+                    Thread.Sleep(250);
+                }
 
-            if (_gcTimer != null)
-            {
-                _gcTimer.Dispose();
+                // Remove all topics
+                Topics.Clear();
+
+                if (_gcTimer != null)
+                {
+                    _gcTimer.Dispose();
+                }
             }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
         }
 
         private void CheckTopics()
@@ -264,7 +318,7 @@ namespace Microsoft.AspNet.SignalR
                 return;
             }
 
-            foreach (var pair in _topics)
+            foreach (var pair in Topics)
             {
                 if (pair.Value.IsExpired)
                 {
@@ -274,7 +328,7 @@ namespace Microsoft.AspNet.SignalR
                                                     Topic.TopicState.NoSubscriptions) == Topic.TopicState.NoSubscriptions)
                     {
                         Topic topic;
-                        _topics.TryRemove(pair.Key, out topic);
+                        Topics.TryRemove(pair.Key, out topic);
                         _stringMinifier.RemoveUnminified(pair.Key);
 
                         Trace.TraceInformation("RemoveTopic(" + pair.Key + ")");
@@ -291,7 +345,7 @@ namespace Microsoft.AspNet.SignalR
 
             while (true)
             {
-                Topic topic = _topics.GetOrAdd(key, factory);
+                Topic topic = Topics.GetOrAdd(key, factory);
 
                 // If we sucessfully marked it as active then bail
                 if (Interlocked.CompareExchange(ref topic.State,
@@ -306,7 +360,7 @@ namespace Microsoft.AspNet.SignalR
         private void RemoveEvent(Subscription subscription, string eventKey)
         {
             Topic topic;
-            if (_topics.TryGetValue(eventKey, out topic))
+            if (Topics.TryGetValue(eventKey, out topic))
             {
                 topic.RemoveSubscription(subscription);
                 subscription.RemoveEvent(eventKey);

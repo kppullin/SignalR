@@ -196,6 +196,8 @@ namespace Microsoft.AspNet.SignalR.Transports
                     }
                     else
                     {
+                        Trace.TraceInformation(metadata.Connection.ConnectionId + " is dead");
+
                         // Check if we need to disconnect this connection
                         CheckDisconnect(metadata);
                     }
@@ -215,10 +217,13 @@ namespace Microsoft.AspNet.SignalR.Transports
         {
             if (RaiseTimeout(metadata))
             {
+                RemoveConnection(metadata.Connection);
+
                 // If we're past the expiration time then just timeout the connection                            
                 metadata.Connection.Timeout();
 
-                RemoveConnection(metadata.Connection);
+                // End the connection
+                metadata.Connection.End();
             }
             else
             {
@@ -259,9 +264,6 @@ namespace Microsoft.AspNet.SignalR.Transports
 
                     // Fire disconnect on the connection
                     metadata.Connection.Disconnect();
-
-                    // End the connection
-                    metadata.Connection.End();
                 }
             }
             catch (Exception ex)
@@ -319,22 +321,30 @@ namespace Microsoft.AspNet.SignalR.Transports
             return elapsed >= _configurationManager.ConnectionTimeout;
         }
 
-        public void Dispose()
+        protected virtual void Dispose(bool disposing)
         {
-            if (_timer != null)
+            if (disposing)
             {
-                _timer.Dispose();
-            }
-
-            // Kill all connections
-            foreach (var pair in _connections)
-            {
-                ConnectionMetadata metadata;
-                if (_connections.TryGetValue(pair.Key, out metadata))
+                if (_timer != null)
                 {
-                    metadata.Connection.End();
+                    _timer.Dispose();
+                }
+
+                // Kill all connections
+                foreach (var pair in _connections)
+                {
+                    ConnectionMetadata metadata;
+                    if (_connections.TryGetValue(pair.Key, out metadata))
+                    {
+                        metadata.Connection.End();
+                    }
                 }
             }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
         }
 
         private class ConnectionMetadata

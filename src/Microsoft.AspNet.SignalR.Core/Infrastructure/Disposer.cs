@@ -35,18 +35,25 @@ namespace Microsoft.AspNet.SignalR
             else
             {
                 // Set has been called multiple times, fail
-                Debug.Fail("Multiple calls to Disposer.Set(IDisposable) without calling Disposer.Dispose() in between.");
+                Debug.Fail("Multiple calls to Disposer.Set(IDisposable) without calling Disposer.Dispose()");
+            }
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                var disposable = Interlocked.Exchange(ref _disposable, _disposedSentinel) as IDisposable;
+                if (disposable != null)
+                {
+                    disposable.Dispose();
+                }
             }
         }
 
         public void Dispose()
         {
-            var disposable = Interlocked.Exchange(ref _disposable, _disposedSentinel) as IDisposable;
-            if (disposable != null)
-            {
-                disposable.Dispose();
-            }
-
+            Dispose(true);
         }
     }
 }

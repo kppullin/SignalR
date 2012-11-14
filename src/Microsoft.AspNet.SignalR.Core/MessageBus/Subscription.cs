@@ -154,6 +154,7 @@ namespace Microsoft.AspNet.SignalR
             }).FastUnwrap();
         }
 
+        [SuppressMessage("Microsoft.Usage", "CA2202:Do not dispose objects multiple times", Justification = "We have a sync and async code path.")]
         [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "We want to avoid user code taking the process down.")]
         private void WorkImpl(TaskCompletionSource<object> taskCompletionSource)
         {
@@ -165,16 +166,14 @@ namespace Microsoft.AspNet.SignalR
                 return;
             }
 
-            int totalCount = 0;
             var items = new List<ArraySegment<Message>>();
-            object state = null;
+            int totalCount;
+            object state;
 
-            PerformWork(ref items, ref totalCount, out state);
+            PerformWork(items, out totalCount, out state);
 
             if (items.Count > 0)
             {
-                BeforeInvoke(state);
-
                 var messageResult = new MessageResult(items, totalCount);
                 Task<bool> callbackTask = Invoke(messageResult, () => BeforeInvoke(state));
 
@@ -202,6 +201,9 @@ namespace Microsoft.AspNet.SignalR
                     }
                     catch (Exception ex)
                     {
+                        // Dispose if we failed to invoke the callback
+                        Dispose();
+
                         taskCompletionSource.TrySetException(ex);
                     }
                 }
@@ -220,7 +222,11 @@ namespace Microsoft.AspNet.SignalR
         {
         }
 
-        protected abstract void PerformWork(ref List<ArraySegment<Message>> items, ref int totalCount, out object state);
+        [SuppressMessage("Microsoft.Design", "CA1002:DoNotExposeGenericLists", Justification = "The list needs to be populated")]
+        [SuppressMessage("Microsoft.Design", "CA1007:UseGenericsWhereAppropriate", Justification = "The caller wouldn't be able to specify what the generic type argument is")]
+        [SuppressMessage("Microsoft.Design", "CA1021:AvoidOutParameters", MessageId = "1#", Justification = "The count needs to be returned")]
+        [SuppressMessage("Microsoft.Design", "CA1021:AvoidOutParameters", MessageId = "2#", Justification = "The state needs to be set by the callee")]
+        protected abstract void PerformWork(List<ArraySegment<Message>> items, out int totalCount, out object state);
 
         private void WorkImplAsync(Task<bool> callbackTask, TaskCompletionSource<object> taskCompletionSource)
         {
@@ -229,6 +235,9 @@ namespace Microsoft.AspNet.SignalR
             {
                 if (task.IsFaulted)
                 {
+                    // Dispose if we failed
+                    Dispose();
+
                     taskCompletionSource.TrySetException(task.Exception);
                 }
                 else if (task.Result)
@@ -271,42 +280,50 @@ namespace Microsoft.AspNet.SignalR
             }
         }
 
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // REIVIEW: Consider sleeping instead of using a tight loop, or maybe timing out after some interval
+                // if the client is very slow then this invoke call might not end quickly and this will make the CPU
+                // hot waiting for the task to return.
+
+                var spinWait = new SpinWait();
+
+                while (true)
+                {
+                    // Wait until the subscription isn't working anymore
+                    var state = Interlocked.CompareExchange(ref _subscriptionState,
+                                                            SubscriptionState.Disposed,
+                                                            SubscriptionState.Idle);
+
+                    // If we're not working then stop
+                    if (state != SubscriptionState.InvokingCallback)
+                    {
+                        if (state != SubscriptionState.Disposed)
+                        {
+                            // Only decrement if we're not disposed already
+                            _counters.MessageBusSubscribersCurrent.Decrement();
+                            _counters.MessageBusSubscribersPerSec.Decrement();
+                        }
+
+                        // Raise the disposed callback
+                        if (DisposedCallback != null)
+                        {
+                            DisposedCallback();
+                        }
+
+                        break;
+                    }
+
+                    spinWait.SpinOnce();
+                }
+            }
+        }
+
         public void Dispose()
         {
-            // REIVIEW: Consider sleeping instead of using a tight loop, or maybe timing out after some interval
-            // if the client is very slow then this invoke call might not end quickly and this will make the CPU
-            // hot waiting for the task to return.
-
-            var spinWait = new SpinWait();
-
-            while (true)
-            {
-                // Wait until the subscription isn't working anymore
-                var state = Interlocked.CompareExchange(ref _subscriptionState,
-                                                        SubscriptionState.Disposed,
-                                                        SubscriptionState.Idle);
-
-                // If we're not working then stop
-                if (state != SubscriptionState.InvokingCallback)
-                {
-                    if (state != SubscriptionState.Disposed)
-                    {
-                        // Only decrement if we're not disposed already
-                        _counters.MessageBusSubscribersCurrent.Decrement();
-                        _counters.MessageBusSubscribersPerSec.Decrement();
-                    }
-
-                    // Raise the disposed callback
-                    if (DisposedCallback != null)
-                    {
-                        DisposedCallback();
-                    }
-
-                    break;
-                }
-
-                spinWait.SpinOnce();
-            }
+            Dispose(true);
         }
 
         [SuppressMessage("Microsoft.Design", "CA1024:UsePropertiesWhereAppropriate", Justification = "")]

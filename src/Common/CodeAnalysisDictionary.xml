@@ -7,6 +7,15 @@
       <Word>Jsonp</Word>
       <Word>Linktionary</Word>
       <Word>Scaleout</Word>
+      <Word>Redis</Word>
+      <Word>Owin</Word>
+      <Word>Stringify</Word>
+      <Word>Unminify</Word>
+      <Word>Unminified</Word>
+      <Word>Stateful</Word>
+      <Word>SignalR</Word>
+      <Word>Hubservable</Word>
+      <Word>Sse</Word>
     </Recognized>
   </Words>
 </Dictionary>

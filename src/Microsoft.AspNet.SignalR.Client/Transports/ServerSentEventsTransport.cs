@@ -2,6 +2,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using Microsoft.AspNet.SignalR.Client.Http;
@@ -12,8 +13,6 @@ namespace Microsoft.AspNet.SignalR.Client.Transports
 {
     public class ServerSentEventsTransport : HttpBasedTransport
     {
-        private int _initializedCalled;
-
         private const string EventSourceKey = "eventSourceStream";
 
         public ServerSentEventsTransport()
@@ -57,6 +56,7 @@ namespace Microsoft.AspNet.SignalR.Client.Transports
             });
         }
 
+        [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity", Justification = "We will refactor later.")]
         private void OpenConnection(IConnection connection, string data, Action initializeCallback, Action<Exception> errorCallback)
         {
             // If we're reconnecting add /connect to the url
@@ -73,7 +73,7 @@ namespace Microsoft.AspNet.SignalR.Client.Transports
             Debug.WriteLine("SSE: GET {0}", (object)url);
 #endif
 
-            _httpClient.GetAsync(url, request =>
+            HttpClient.GetAsync(url, request =>
             {
                 prepareRequest(request);
 
@@ -125,7 +125,7 @@ namespace Microsoft.AspNet.SignalR.Client.Transports
 
                     eventSource.Message = sseEvent =>
                     {
-                        if (sseEvent.Type == EventType.Data)
+                        if (sseEvent.EventType == EventType.Data)
                         {
                             if (sseEvent.Data.Equals("initialized", StringComparison.OrdinalIgnoreCase))
                             {

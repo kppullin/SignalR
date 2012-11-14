@@ -33,6 +33,7 @@ namespace Microsoft.AspNet.SignalR
         /// <param name="id">id of the payload within that stream</param>
         /// <param name="messages">List of messages associated</param>
         /// <returns></returns>
+        [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "2", Justification = "Called from derived class")]
         [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "0", Justification = "Called from derived class")]
         protected Task OnReceived(string streamId, ulong id, Message[] messages)
         {
@@ -48,7 +49,7 @@ namespace Microsoft.AspNet.SignalR
                 ulong localId = Save(m);
 
                 // Set the topic pointer for this event key so we don't need to look it up later
-                info.Store = _topics[m.Key].Store;
+                info.Store = Topics[m.Key].Store;
 
                 info.MinLocal = Math.Min(localId, info.MinLocal);
                 info.Count++;
@@ -81,7 +82,7 @@ namespace Microsoft.AspNet.SignalR
         [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "0", Justification = "Called from derived class")]
         protected override Subscription CreateSubscription(ISubscriber subscriber, string cursor, Func<MessageResult, Task<bool>> callback, int messageBufferSize)
         {
-            return new ScaleoutSubscription(subscriber.Identity, subscriber.EventKeys, cursor, _streams, callback, messageBufferSize, _counters);
+            return new ScaleoutSubscription(subscriber.Identity, subscriber.EventKeys, cursor, _streams, callback, messageBufferSize, Counters);
         }
     }
 }

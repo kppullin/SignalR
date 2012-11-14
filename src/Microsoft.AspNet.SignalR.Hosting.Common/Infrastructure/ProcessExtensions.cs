@@ -2,16 +2,24 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Threading;
 
 namespace Microsoft.AspNet.SignalR.Hosting.Common
 {
     public static class ProcessExtensions
     {
+        [SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "It's cleaned up when the cancellation token is disposed.")]
         public static string GetUniqueInstanceName(this Process process, CancellationToken release)
         {
+            if (process == null)
+            {
+                throw new ArgumentNullException("process");
+            }
+
             Mutex mutex = null;
-            
+
             var instanceId = 0;
             while (true)
             {
@@ -38,8 +46,8 @@ namespace Microsoft.AspNet.SignalR.Hosting.Common
                 }
                 instanceId++;
             }
-            
-            return process.ProcessName + " (" + instanceId.ToString() + ")";
+
+            return process.ProcessName + " (" + instanceId.ToString(CultureInfo.InvariantCulture) + ")";
         }
     }
 }

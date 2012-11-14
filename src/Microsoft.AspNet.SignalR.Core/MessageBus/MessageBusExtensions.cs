@@ -13,10 +13,25 @@ namespace Microsoft.AspNet.SignalR
     {
         public static Task Publish(this IMessageBus bus, string source, string key, string value)
         {
+            if (bus == null)
+            {
+                throw new ArgumentNullException("bus");
+            }
+
+            if (source == null)
+            {
+                throw new ArgumentNullException("source");
+            }
+
+            if (String.IsNullOrEmpty(key))
+            {
+                throw new ArgumentNullException("key");
+            }
+
             return bus.Publish(new Message(source, key, value));
         }
 
-        public static Task Ack(this IMessageBus bus, string source, string eventKey, string commandId)
+        internal static Task Ack(this IMessageBus bus, string source, string eventKey, string commandId)
         {
             // Prepare the ack
             var message = new Message(source, AckPrefix(eventKey), null);
@@ -25,12 +40,14 @@ namespace Microsoft.AspNet.SignalR
             return bus.Publish(message);
         }
 
-        public static Task<T> ReceiveAsync<T>(this IMessageBus bus,
-                                              ISubscriber subscriber,
-                                              string cursor,
-                                              CancellationToken cancel,
-                                              int maxMessages,
-                                              Func<MessageResult, T> map) where T : class
+        [SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "It's disposed in an async manner.")]
+        [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "Exceptions are flowed back to the caller.")]
+        internal static Task<T> ReceiveAsync<T>(this IMessageBus bus,
+                                                ISubscriber subscriber,
+                                                string cursor,
+                                                CancellationToken cancel,
+                                                int maxMessages,
+                                                Func<MessageResult, T> map) where T : class
         {
             var tcs = new TaskCompletionSource<T>();
             IDisposable subscription = null;
@@ -38,24 +55,13 @@ namespace Microsoft.AspNet.SignalR
             var disposer = new Disposer();
             int resultSet = 0;
             var result = default(T);
-            var registration = default(CancellationTokenRegistration);
-            var callbackState = 0;
+            IDisposable registration = null;
 
-            try
+            registration = cancel.SafeRegister(state =>
             {
-                registration = cancel.Register(() =>
-                {
-                    if (Interlocked.Exchange(ref callbackState, 1) == 0)
-                    {
-                        disposer.Dispose();
-                    }
-                });
-            }
-            catch (ObjectDisposedException)
-            {
-                // Dispose immediately
-                disposer.Dispose();
-            }
+                state.Dispose();
+            },
+            disposer);
 
             try
             {
@@ -66,11 +72,8 @@ namespace Microsoft.AspNet.SignalR
                     {
                         result = map(messageResult);
 
-                        if (Interlocked.CompareExchange(ref callbackState, 1, 0) == 0)
-                        {
-                            // Dispose of the cancellation token subscription
-                            registration.Dispose();
-                        }
+                        // Dispose of the cancellation token subscription
+                        registration.Dispose();
                     }
 
                     if (messageResult.Terminal)

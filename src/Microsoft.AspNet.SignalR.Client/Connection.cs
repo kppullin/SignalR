@@ -3,15 +3,21 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Microsoft.AspNet.SignalR.Client.Http;
 using Microsoft.AspNet.SignalR.Client.Transports;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+// Include HashSet implementation for WP7.
+#if WINDOWS_PHONE
+using Microsoft.AspNet.SignalR.Client.Infrastructure;
+#endif
 
 namespace Microsoft.AspNet.SignalR.Client
 {
@@ -85,12 +91,17 @@ namespace Microsoft.AspNet.SignalR.Client
         /// <param name="queryString">The query string data to pass to the server.</param>
         public Connection(string url, string queryString)
         {
+            if (url == null)
+            {
+                throw new ArgumentNullException("url");
+            }
+
             if (url.Contains("?"))
             {
                 throw new ArgumentException(String.Format(CultureInfo.CurrentCulture, Resources.Error_UrlCantContainQueryStringDirectly), "url");
             }
 
-            if (!url.EndsWith("/"))
+            if (!url.EndsWith("/", StringComparison.Ordinal))
             {
                 url += "/";
             }
@@ -120,7 +131,7 @@ namespace Microsoft.AspNet.SignalR.Client
 #endif
 
         /// <summary>
-        /// Gets or sets the groups for the connection.
+        /// Gets the groups for the connection.
         /// </summary>
         public IEnumerable<string> Groups
         {
@@ -223,6 +234,7 @@ namespace Microsoft.AspNet.SignalR.Client
             return null;
         }
 
+        [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "The exception is flowed back to the caller via the tcs.")]
         private Task Negotiate(IClientTransport transport)
         {
             var negotiateTcs = new TaskCompletionSource<object>();
@@ -373,11 +385,13 @@ namespace Microsoft.AspNet.SignalR.Client
             return _transport.Send<T>(this, data);
         }
 
+        [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "0", Justification = "This is called by the transport layer")]
         void IConnection.OnReceived(JToken message)
         {
             OnReceived(message);
         }
 
+        [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "0", Justification = "This is called by the transport layer")]
         protected virtual void OnReceived(JToken message)
         {
             if (Received != null)
@@ -402,6 +416,7 @@ namespace Microsoft.AspNet.SignalR.Client
             }
         }
 
+        [SuppressMessage("Microsoft.Design", "CA1062:Validate arguments of public methods", MessageId = "0", Justification = "This is called by the transport layer")]
         void IConnection.PrepareRequest(IRequest request)
         {
 #if WINDOWS_PHONE
@@ -449,6 +464,7 @@ namespace Microsoft.AspNet.SignalR.Client
 #endif
         }
 
+        [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "The Version constructor can throw exceptions of many different types. Failure is indicated by returning false.")]
         private static bool TryParseVersion(string versionString, out Version version)
         {
 #if WINDOWS_PHONE || NET35

@@ -109,6 +109,8 @@
     <Compile Include="Infrastructure\PerformanceCounterManager.cs" />
     <Compile Include="Infrastructure\Disposer.cs" />
     <Compile Include="Infrastructure\PerformanceCounterWrapper.cs" />
+    <Compile Include="Infrastructure\CancellationTokenExtensions.cs" />
+    <Compile Include="Infrastructure\SafeCancellationTokenSource.cs" />
     <Compile Include="Infrastructure\TaskQueue.cs" />
     <Compile Include="Json\IJsonValue.cs" />
     <Compile Include="Json\IJsonWritable.cs" />
@@ -167,7 +169,6 @@
     <Compile Include="IConnectionIdPrefixGenerator.cs" />
     <Compile Include="Json\IJsonSerializer.cs" />
     <Compile Include="Infrastructure\ITraceManager.cs" />
-    <Compile Include="Infrastructure\LockedList.cs" />
     <Compile Include="Infrastructure\DependencyResolverExtensions.cs" />
     <Compile Include="Hubs\ReflectionHelper.cs" />
     <Compile Include="Hosting\RequestExtensions.cs" />

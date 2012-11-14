@@ -54,9 +54,25 @@ namespace Microsoft.AspNet.SignalR.Infrastructure
             }
         }
 
-        public event Action<string> EventKeyAdded;
+        event Action<string> ISubscriber.EventKeyAdded
+        {
+            add
+            {
+            }
+            remove
+            {
+            }
+        }
 
-        public event Action<string> EventKeyRemoved;
+        event Action<string> ISubscriber.EventKeyRemoved
+        {
+            add
+            {
+            }
+            remove
+            {
+            }
+        }
 
         public Func<string> GetCursor { get; set; }
 
@@ -77,12 +93,20 @@ namespace Microsoft.AspNet.SignalR.Infrastructure
             return _messageBus.Publish(_serverIdManager.ServerId, ServerSignal, _serializer.Stringify(command));
         }
 
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_subscription != null)
+                {
+                    _subscription.Dispose();
+                }
+            }
+        }
+
         public void Dispose()
         {
-            if (_subscription != null)
-            {
-                _subscription.Dispose();
-            }
+            Dispose(true);
         }
 
         private void ProcessMessages()
